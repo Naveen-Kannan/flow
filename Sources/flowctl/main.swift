@@ -48,11 +48,7 @@ struct FlowCLI {
     }
 
     static func makeTranscriber() -> any AudioTranscriber {
-        let env = ProcessInfo.processInfo.environment
-        if env["FLOW_WHISPER_MODEL"]?.isEmpty == false {
-            return WhisperShellTranscriber()
-        }
-        return NoopTranscriber()
+        DefaultTranscriber.make()
     }
 
     static func printUsage() {

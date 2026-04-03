@@ -14,6 +14,10 @@ public final class AudioRecorder {
 
     public init() {}
 
+    public var isRecording: Bool {
+        recorder != nil
+    }
+
     public func begin() throws -> URL {
         guard recorder == nil else { throw AudioRecorderError.alreadyRecording }
         guard MicrophonePermission.requestIfNeeded() else {
