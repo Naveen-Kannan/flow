@@ -47,9 +47,9 @@ finalization and the extra conversion subprocess.
 
 Set `FLOW_TRANSCRIBER=whisper` to use the previous backend. It looks for
 `/opt/homebrew/bin/whisper-cli` and `~/.local/share/flow/models/ggml-tiny.en.bin`;
-`FLOW_WHISPER_MODEL` and `FLOW_WHISPER_CLI` override those paths. That optional backend
-still returns a noop placeholder if its files are missing. The Parakeet backend
-reports failures instead of returning a placeholder.
+`FLOW_WHISPER_MODEL` and `FLOW_WHISPER_CLI` override those paths. Both backends report failures instead of inserting placeholder text. Explicit Whisper
+path overrides are honored; invalid overrides fail instead of silently choosing a fallback.
+Whisper stdout and stderr are drained while it runs, including verbose failures.
 
 `flowctl benchmark <audio-file>` prints model preparation time and three sequential
 transcription timings. This is a diagnostic, not a voice-quality evaluation.

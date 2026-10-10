@@ -18,39 +18,33 @@ public enum DefaultTranscriber {
         let executablePath = resolveExecutablePath(environment: environment)
         let modelPath = resolveModelPath(environment: environment)
 
-        guard let executablePath, let modelPath else {
-            return NoopTranscriber()
-        }
+        guard let executablePath else { return UnavailableTranscriber(error: .executableMissing) }
+        guard let modelPath else { return UnavailableTranscriber(error: .modelMissing) }
         return WhisperShellTranscriber(executablePath: executablePath, modelPath: modelPath)
     }
 
     private static func resolveExecutablePath(environment: [String: String]) -> String? {
-        let candidates = [
-            environment["FLOW_WHISPER_CLI"],
-            "/opt/homebrew/bin/whisper-cli",
-        ].compactMap { $0 }.filter { !$0.isEmpty }
+        let candidates = environment["FLOW_WHISPER_CLI"].map { [$0] }
+            ?? ["/opt/homebrew/bin/whisper-cli"]
 
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private static func resolveModelPath(environment: [String: String]) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let candidates = [
-            environment["FLOW_WHISPER_MODEL"],
+        let candidates = environment["FLOW_WHISPER_MODEL"].map { [$0] } ?? [
             "\(home)/.local/share/flow/models/ggml-tiny.en.bin",
             "\(home)/.local/share/flow/models/ggml-base.en.bin",
-        ].compactMap { $0 }.filter { !$0.isEmpty }
+        ]
 
         return candidates.first { FileManager.default.fileExists(atPath: $0) }
     }
 }
 
-public struct NoopTranscriber: AudioTranscriber {
-    public init() {}
-
-    public func transcribe(_ audioURL: URL) async throws -> String {
-        "[transcription unavailable] \(audioURL.lastPathComponent)"
-    }
+private struct UnavailableTranscriber: AudioTranscriber {
+    let error: ShellTranscriberError
+    func prepare() async throws { throw error }
+    func transcribe(_ audioURL: URL) async throws -> String { throw error }
 }
 
 public enum ShellTranscriberError: Error {
@@ -96,14 +90,23 @@ public struct WhisperShellTranscriber: AudioTranscriber {
         process.standardError = stderrPipe
 
         try process.run()
+        let stderrResult = OutputBox()
+        let done = DispatchGroup()
+        done.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stderrResult.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            done.leave()
+        }
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        done.wait()
 
         let stdout = String(
-            decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
+            decoding: stdoutData,
             as: UTF8.self
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         let stderr = String(
-            decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+            decoding: stderrResult.data,
             as: UTF8.self
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0 else {
@@ -132,13 +135,16 @@ public struct WhisperShellTranscriber: AudioTranscriber {
         process.standardError = pipe
 
         try process.run()
-        process.waitUntilExit()
-
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0 else {
             throw ShellTranscriberError.conversionFailed(output)
         }
         return outputURL
     }
+}
+
+private final class OutputBox: @unchecked Sendable {
+    var data = Data()
 }

@@ -2,15 +2,17 @@ import Foundation
 import Testing
 @testable import Flow
 
-@Test func noopTranscriberIncludesFileName() async throws {
-    let url = URL(fileURLWithPath: "/tmp/example.m4a")
-    let text = try await NoopTranscriber().transcribe(url)
-    #expect(text.contains("example.m4a"))
+@Test func missingWhisperDoesNotProducePlaceholderTranscript() async {
+    let transcriber = DefaultTranscriber.make(environment: ["FLOW_TRANSCRIBER": "whisper", "FLOW_WHISPER_CLI": "/missing/whisper", "FLOW_WHISPER_MODEL": "/missing/model"])
+    do {
+        _ = try await transcriber.transcribe(URL(fileURLWithPath: "/tmp/missing.wav"))
+        Issue.record("Missing Whisper prerequisites produced text")
+    } catch { #expect(error is ShellTranscriberError) }
 }
 
 @Test func beginIsIdempotentWhileRecording() throws {
     let recorder = StubRecorder()
-    let controller = FlowController(recorder: recorder, transcriber: NoopTranscriber(), playback: StubPlayback())
+    let controller = FlowController(recorder: recorder, transcriber: StubTranscriber(result: ""), playback: StubPlayback())
 
     let first = try controller.begin()
     let second = try controller.begin()
@@ -103,7 +105,7 @@ private final class StubPlayback: RecordingPlayback {
     let playback = StubPlayback()
     recorder.events = { events.append($0) }
     playback.events = { events.append($0) }
-    let controller = FlowController(recorder: recorder, transcriber: NoopTranscriber(), playback: playback)
+    let controller = FlowController(recorder: recorder, transcriber: StubTranscriber(result: ""), playback: playback)
     _ = try controller.begin()
     _ = try controller.begin()
     _ = try controller.finishRecording()
@@ -120,7 +122,7 @@ private final class StubPlayback: RecordingPlayback {
         playback.events = { events.append($0) }
         recorder.failBegin = failure == "start"
         recorder.failFinish = failure == "stop"
-        let controller = FlowController(recorder: recorder, transcriber: NoopTranscriber(), playback: playback)
+        let controller = FlowController(recorder: recorder, transcriber: StubTranscriber(result: ""), playback: playback)
         if failure == "start" {
             #expect(throws: AudioRecorderError.self) { try controller.begin() }
         } else {
@@ -187,4 +189,16 @@ private final class PlaybackURLProtocol: URLProtocol {
     playback.resumeAfterRecording()
     try await Task.sleep(for: .milliseconds(250))
     #expect(PlaybackURLProtocol.requests.withLock { $0 } == ["begin", "end"])
+}
+
+@Test func whisperDrainsLargeStderrWithoutBlocking() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let script = directory.appendingPathComponent("whisper")
+    try "#!/bin/sh\n/usr/bin/head -c 262144 /dev/zero >&2\necho transcript\n".write(to: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+    let transcriber = WhisperShellTranscriber(executablePath: script.path, modelPath: "/test/model")
+    let text = try await transcriber.transcribe(directory.appendingPathComponent("sample.wav"))
+    #expect(text == "transcript")
 }
