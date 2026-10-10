@@ -26,10 +26,13 @@ public final class AudioRecorder {
 
         let url = Self.makeOutputURL()
         let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: 16_000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
         ]
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
@@ -60,7 +63,7 @@ public final class AudioRecorder {
     }
 
     private static func makeOutputURL() -> URL {
-        let name = "flow-\(UUID().uuidString).m4a"
+        let name = "flow-\(UUID().uuidString).wav"
         return FileManager.default.temporaryDirectory.appendingPathComponent(name)
     }
 }

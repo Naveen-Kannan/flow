@@ -15,15 +15,18 @@ public final class FlowController {
 
     private let recorder: any AudioRecording
     private let transcriber: any AudioTranscriber
+    private let playback: any RecordingPlayback
     private let lock = NSLock()
     private var activeRecordingURL: URL?
 
     public init(
         recorder: any AudioRecording = AudioRecorder(),
-        transcriber: any AudioTranscriber = DefaultTranscriber.make()
+        transcriber: any AudioTranscriber = DefaultTranscriber.make(),
+        playback: any RecordingPlayback = TunesRecordingPlayback()
     ) {
         self.recorder = recorder
         self.transcriber = transcriber
+        self.playback = playback
     }
 
     public var isRecording: Bool {
@@ -36,7 +39,14 @@ public final class FlowController {
             return url
         }
 
-        let url = try recorder.begin()
+        playback.pauseForRecording()
+        let url: URL
+        do {
+            url = try recorder.begin()
+        } catch {
+            playback.resumeAfterRecording()
+            throw error
+        }
         lock.withLock {
             activeRecordingURL = url
         }
@@ -49,7 +59,15 @@ public final class FlowController {
             throw AudioRecorderError.notRecording
         }
 
-        let url = try recorder.finish()
+        defer { playback.resumeAfterRecording() }
+        let url: URL
+        do {
+            url = try recorder.finish()
+        } catch {
+            recorder.cancel()
+            lock.withLock { activeRecordingURL = nil }
+            throw error
+        }
         lock.withLock {
             activeRecordingURL = nil
         }
@@ -81,6 +99,11 @@ public final class FlowController {
         }
         guard shouldCancel else { return }
         recorder.cancel()
+        playback.resumeAfterRecording()
+    }
+
+    public func prepare() async throws {
+        try await transcriber.prepare()
     }
 
     public func transcribe(_ audioURL: URL) async throws -> String {

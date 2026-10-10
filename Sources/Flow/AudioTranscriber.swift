@@ -1,11 +1,20 @@
 import Foundation
 
 public protocol AudioTranscriber {
+    func prepare() async throws
     func transcribe(_ audioURL: URL) async throws -> String
+}
+
+public extension AudioTranscriber {
+    func prepare() async throws {}
 }
 
 public enum DefaultTranscriber {
     public static func make(environment: [String: String] = ProcessInfo.processInfo.environment) -> any AudioTranscriber {
+        if environment["FLOW_TRANSCRIBER"] != "whisper" {
+            let directory = environment["FLOW_PARAKEET_MODEL_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            return ParakeetTranscriber(modelDirectory: directory)
+        }
         let executablePath = resolveExecutablePath(environment: environment)
         let modelPath = resolveModelPath(environment: environment)
 
