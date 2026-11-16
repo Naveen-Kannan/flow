@@ -38,6 +38,30 @@ import Testing
     #expect(box.withLock { $0 } == "hello")
 }
 
+@Test func dictationRefusedWhileMeetingTranscribes() throws {
+    let recorder = StubRecorder()
+    var events: [String] = []
+    let playback = StubPlayback()
+    playback.events = { events.append($0) }
+    let controller = FlowController(recorder: recorder, transcriber: StubTranscriber(result: "", isTranscribingMeeting: true), playback: playback)
+
+    #expect(throws: FlowError.self) { try controller.begin() }
+    #expect(recorder.beginCount == 0)
+    #expect(events.isEmpty)
+}
+
+@Test func commitDeletesAudioAfterTranscription() async throws {
+    let recorder = StubRecorder()
+    FileManager.default.createFile(atPath: recorder.url.path, contents: Data([0]))
+    let controller = FlowController(recorder: recorder, transcriber: StubTranscriber(result: "hi"), playback: StubPlayback())
+
+    _ = try controller.begin()
+    _ = try controller.commit()
+    try await Task.sleep(for: .milliseconds(50))
+
+    #expect(!FileManager.default.fileExists(atPath: recorder.url.path))
+}
+
 private final class StubRecorder: AudioRecording {
     let url = URL(fileURLWithPath: "/tmp/test.m4a")
     var beginCount = 0
@@ -72,6 +96,7 @@ private final class StubRecorder: AudioRecording {
 
 private struct StubTranscriber: AudioTranscriber {
     let result: String
+    var isTranscribingMeeting = false
 
     func transcribe(_ audioURL: URL) async throws -> String {
         result

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import os
 
@@ -17,6 +18,11 @@ public struct FlowCommands {
         }
         if controller.onError == nil {
             controller.onError = { error in
+                if case FlowError.meetingTranscriptionInProgress = error {
+                    flowLog.notice("dictation refused: meeting transcription in progress")
+                    DispatchQueue.main.async { NSSound.beep() }
+                    return
+                }
                 flowLog.error("dictation failed: \(String(describing: error), privacy: .public)")
             }
         }

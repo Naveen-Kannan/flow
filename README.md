@@ -19,7 +19,9 @@ or streaming work is introduced.
 ## Package shape
 
 - `FlowController` owns the simple `begin`, `commit`, and `cancel` flow
-- `AudioRecorder` uses native `AVAudioRecorder` and writes a 16 kHz mono PCM `.wav`
+- `AudioRecorder` reads the mic through a Core Audio IOProc and writes a 16 kHz mono PCM `.wav`,
+  deleted after transcription. Not `AVAudioEngine`: it shares one IO unit between input and output,
+  so a built-in-mic input with AirPods output stops the engine ~40 ms in and records nothing.
 - `AudioTranscriber` is a small interface for post-record transcription
 - `FlowCommands` exports command names for `hotkey` and injects the transcript back at the cursor
 
@@ -53,6 +55,20 @@ Whisper stdout and stderr are drained while it runs, including verbose failures.
 
 `flowctl benchmark <audio-file>` prints model preparation time and three sequential
 transcription timings. This is a diagnostic, not a voice-quality evaluation.
+
+## Microphone
+
+Dictation records from the built-in mic, even when AirPods are the default input. A Bluetooth
+headset mic takes ~1 s to wake (often 1–3 s, sometimes never), recording digital silence over
+the first words, and switches the headset to low-quality call audio. With the lid closed the
+built-in mic is disconnected, so the system default input is used. `FLOW_INPUT=default` always
+uses the default input.
+
+## Meeting notes
+
+`notes` shares the Parakeet model, and jobs run serially. While a meeting is queued or
+transcribing, Ctrl+D beeps and records nothing; a recording in progress when one starts is
+discarded rather than typed late.
 
 ## Planned integration
 

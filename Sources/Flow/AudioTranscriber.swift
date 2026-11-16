@@ -1,11 +1,14 @@
 import Foundation
 
 public protocol AudioTranscriber {
+    /// True while a meeting is queued or transcribing; dictation is refused until it finishes.
+    var isTranscribingMeeting: Bool { get }
     func prepare() async throws
     func transcribe(_ audioURL: URL) async throws -> String
 }
 
 public extension AudioTranscriber {
+    var isTranscribingMeeting: Bool { false }
     func prepare() async throws {}
 }
 

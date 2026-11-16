@@ -20,10 +20,13 @@ public actor ParakeetTranscriber: AudioTranscriber {
     private var initialization: Task<Void, Error>?
     private var engine: AsrManager?
     private var last: Task<Void, Never>?
+    private nonisolated let meetingJobs = MeetingJobs()
 
     public init(modelDirectory: URL? = nil) {
         self.modelDirectory = modelDirectory
     }
+
+    public nonisolated var isTranscribingMeeting: Bool { meetingJobs.active }
 
     public func prepare() async throws {
         _ = try await manager()
@@ -36,6 +39,8 @@ public actor ParakeetTranscriber: AudioTranscriber {
 
     /// Long-file transcription with token timings; `system` selects the system-audio decoder state.
     public func transcribeTimed(_ audioURL: URL, system: Bool) async throws -> [TimedToken] {
+        meetingJobs.add(1)
+        defer { meetingJobs.add(-1) }
         let r = try await serial { try await $0.transcribeStreaming(audioURL, source: system ? .system : .microphone) }
         return (r.tokenTimings ?? []).map { TimedToken(text: $0.token, start: $0.startTime, end: $0.endTime) }
     }
@@ -74,4 +79,11 @@ public actor ParakeetTranscriber: AudioTranscriber {
             throw error
         }
     }
+}
+
+private final class MeetingJobs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var active: Bool { lock.lock(); defer { lock.unlock() }; return count > 0 }
+    func add(_ delta: Int) { lock.lock(); count += delta; lock.unlock() }
 }

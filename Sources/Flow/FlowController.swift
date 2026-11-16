@@ -9,6 +9,11 @@ public protocol AudioRecording: AnyObject {
 
 extension AudioRecorder: AudioRecording {}
 
+public enum FlowError: Error {
+    /// Meeting notes are using the shared model; dictation would wait behind the whole meeting.
+    case meetingTranscriptionInProgress
+}
+
 public final class FlowController {
     public var onTranscript: ((String) -> Void)?
     public var onError: ((any Error) -> Void)?
@@ -38,6 +43,7 @@ public final class FlowController {
         if let url = lock.withLock({ activeRecordingURL }) {
             return url
         }
+        guard !transcriber.isTranscribingMeeting else { throw FlowError.meetingTranscriptionInProgress }
 
         playback.pauseForRecording()
         let url: URL
@@ -75,8 +81,13 @@ public final class FlowController {
     }
 
     public func commit() throws -> URL {
+        if transcriber.isTranscribingMeeting, isRecording {
+            cancel()
+            throw FlowError.meetingTranscriptionInProgress
+        }
         let audioURL = try finishRecording()
         Task {
+            defer { try? FileManager.default.removeItem(at: audioURL) }
             do {
                 let text = try await transcriber.transcribe(audioURL)
                 await MainActor.run {
